@@ -465,64 +465,67 @@ async function cargarRevisar(){
    EXPORTAR (imagen o PDF)
    ========================================================= */
 async function exportarMes(mesKey, monthData, formato){
-  const transferencias = monthData.transferencias || [];
-  const veinte = monthData.veinte || [];
-  // El 20% facturado es la suma de lo cargado en esa etapa (cuando el mes
-  // se guardó completo, esa suma equivale al 20% calculado sobre las transferencias).
-  const totalTransf = transferencias.reduce((a, b) => a + b, 0);
-  const totalVeinte = veinte.reduce((a, b) => a + b, 0);
-  const totalFacturacion = totalTransf + totalVeinte; // TOTAL = transferencias + 20%
+  try {
+    if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
+      toast('No se pudieron cargar las librerías de exportación. Revisá tu conexión a internet o si algún bloqueador de anuncios/contenido está frenando cdnjs.cloudflare.com, y volvé a intentar.', 'error');
+      return;
+    }
 
-  document.getElementById('export-mes-titulo').textContent = mesKey.replace('-', ' ');
+    const transferencias = monthData.transferencias || [];
+    const veinte = monthData.veinte || [];
+    // El 20% facturado es la suma de lo cargado en esa etapa (cuando el mes
+    // se guardó completo, esa suma equivale al 20% calculado sobre las transferencias).
+    const totalTransf = transferencias.reduce((a, b) => a + b, 0);
+    const totalVeinte = veinte.reduce((a, b) => a + b, 0);
+    const totalFacturacion = totalTransf + totalVeinte; // TOTAL = transferencias + 20%
 
-  const listaEl = document.getElementById('export-lista-transferencias');
-  listaEl.innerHTML = transferencias.length
-    ? transferencias.map((m, i) => `<li><span><span class="num">#${i + 1}</span>Transferencia</span><strong>${formatARS(m)}</strong></li>`).join('')
-    : '<li><span>Sin valores cargados</span></li>';
+    document.getElementById('export-mes-titulo').textContent = mesKey.replace('-', ' ');
 
-  document.getElementById('export-total-transf').textContent = formatARS(totalTransf);
-  document.getElementById('export-veinte').textContent = formatARS(totalVeinte);
-  document.getElementById('export-total').textContent = formatARS(totalFacturacion);
+    const listaEl = document.getElementById('export-lista-transferencias');
+    listaEl.innerHTML = transferencias.length
+      ? transferencias.map((m, i) => `<li><span><span class="num">#${i + 1}</span>Transferencia</span><strong>${formatARS(m)}</strong></li>`).join('')
+      : '<li><span>Sin valores cargados</span></li>';
 
-  const tarjeta = document.getElementById('tarjeta-exportar');
-  tarjeta.style.left = '0px'; // mover a la vista temporalmente para que html2canvas la capture bien
-  tarjeta.style.zIndex = '-1';
-  tarjeta.style.opacity = '0'; // invisible para el usuario, pero sigue "pintada" (html2canvas la necesita así)
+    document.getElementById('export-total-transf').textContent = formatARS(totalTransf);
+    document.getElementById('export-veinte').textContent = formatARS(totalVeinte);
+    document.getElementById('export-total').textContent = formatARS(totalFacturacion);
 
-  // esperamos un frame para que el navegador termine de acomodar el layout
-  await new Promise(r => requestAnimationFrame(r));
+    const tarjeta = document.getElementById('tarjeta-exportar');
+    // La tarjeta ya está posicionada fuera del área visible (ver style.css),
+    // así que la capturamos directamente, sin tocar su opacidad/visibilidad.
+    const canvas = await html2canvas(tarjeta, { scale: 2, backgroundColor: '#ffffff' });
 
-  const canvas = await html2canvas(tarjeta, { scale: 2, backgroundColor: '#ffffff' });
-  tarjeta.style.left = '-9999px';
-  tarjeta.style.opacity = '1';
+    if (formato === 'png') {
+      const link = document.createElement('a');
+      link.download = `Facturacion_${mesKey}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } else {
+      const { jsPDF } = window.jspdf;
+      // Convertimos el tamaño real de la tarjeta (en px CSS, ya que el canvas
+      // está capturado al doble de escala) a milímetros, para que el PDF
+      // respete la proporción exacta y no salga estirado ni cortado.
+      const anchoPxCSS = canvas.width / 2;
+      const altoPxCSS = canvas.height / 2;
+      const PX_A_MM = 25.4 / 96;
+      const anchoMM = anchoPxCSS * PX_A_MM;
+      const altoMM = altoPxCSS * PX_A_MM;
+      const margenMM = 10;
 
-  if (formato === 'png') {
-    const link = document.createElement('a');
-    link.download = `Facturacion_${mesKey}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  } else {
-    const { jsPDF } = window.jspdf;
-    // Convertimos el tamaño real de la tarjeta (en px CSS, ya que el canvas
-    // está capturado al doble de escala) a milímetros, para que el PDF
-    // respete la proporción exacta y no salga estirado ni cortado.
-    const anchoPxCSS = canvas.width / 2;
-    const altoPxCSS = canvas.height / 2;
-    const PX_A_MM = 25.4 / 96;
-    const anchoMM = anchoPxCSS * PX_A_MM;
-    const altoMM = altoPxCSS * PX_A_MM;
-    const margenMM = 10;
-
-    // No pasamos "orientation" junto con un array en "format": jsPDF puede
-    // invertir ancho/alto en ese caso. El array ya define el tamaño exacto.
-    const pdf = new jsPDF({
-      unit: 'mm',
-      format: [anchoMM + margenMM * 2, altoMM + margenMM * 2]
-    });
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margenMM, margenMM, anchoMM, altoMM);
-    pdf.save(`Facturacion_${mesKey}.pdf`);
+      // No pasamos "orientation" junto con un array en "format": jsPDF puede
+      // invertir ancho/alto en ese caso. El array ya define el tamaño exacto.
+      const pdf = new jsPDF({
+        unit: 'mm',
+        format: [anchoMM + margenMM * 2, altoMM + margenMM * 2]
+      });
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margenMM, margenMM, anchoMM, altoMM);
+      pdf.save(`Facturacion_${mesKey}.pdf`);
+    }
+    toast('Exportación lista.');
+  } catch (err) {
+    console.error('Error al exportar:', err);
+    toast('No se pudo exportar. Probá de nuevo; si sigue fallando, revisá la consola del navegador.', 'error');
   }
-  toast('Exportación lista.');
 }
 
 /* =========================================================

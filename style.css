@@ -458,11 +458,14 @@ input[type="color"]{
   cursor:pointer;
 }
 
-/* ===== TARJETA EXPORTAR (oculta, usada solo para captura) ===== */
+/* ===== TARJETA EXPORTAR (oculta, usada solo para captura) =====
+   Se posiciona fuera del área visible con top negativo en vez de
+   opacity:0 o visibility:hidden, porque html2canvas SÍ respeta esas
+   dos propiedades y capturaría una imagen transparente/en blanco. */
 .tarjeta-exportar{
-  position:fixed;
-  left:-9999px;
-  top:0;
+  position:absolute;
+  left:0;
+  top:-100000px;
   width:420px;
   background:#fff;
   padding:34px;
