@@ -7,6 +7,69 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=Cambria&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<style>
+  /* ===== Ruleta de Mes / Año (agregado directo acá para no tener que
+     volver a subir style.css) ===== */
+  .campo-label-rueda{
+    display:block;
+    font-size:.82rem;
+    font-weight:600;
+    color:var(--text-suave, #5b6b7a);
+    margin-bottom:8px;
+  }
+  .rueda-selector{
+    position:relative;
+    display:flex;
+    gap:10px;
+    height:180px;
+    margin:0 0 20px;
+  }
+  .rueda-marco{
+    position:absolute;
+    top:50%;
+    left:0;
+    right:0;
+    height:36px;
+    transform:translateY(-50%);
+    border-top:2px solid var(--accent, #00549f);
+    border-bottom:2px solid var(--accent, #00549f);
+    background:var(--accent-light, #e8f1fb);
+    opacity:.55;
+    pointer-events:none;
+    border-radius:8px;
+    z-index:0;
+  }
+  .rueda-columna{
+    position:relative;
+    flex:1;
+    overflow-y:scroll;
+    scroll-snap-type:y mandatory;
+    -webkit-overflow-scrolling:touch;
+    border-radius:10px;
+    background:#fbfdff;
+    border:1.5px solid #d7e1ea;
+    padding:72px 0;
+    scrollbar-width:none;
+  }
+  .rueda-columna::-webkit-scrollbar{ display:none; }
+  .rueda-item{
+    height:36px;
+    line-height:36px;
+    text-align:center;
+    scroll-snap-align:center;
+    font-size:1rem;
+    color:var(--text-suave, #5b6b7a);
+    font-weight:500;
+    cursor:pointer;
+    user-select:none;
+    transition: color .15s ease, font-weight .15s ease, font-size .15s ease;
+  }
+  .rueda-item.seleccionado{
+    color:var(--accent-dark, #003b71);
+    font-weight:800;
+    font-size:1.15rem;
+  }
+</style>
 </head>
 <body>
 
@@ -88,10 +151,13 @@
     <h1>Registrar · Elegí el mes</h1>
   </header>
   <div class="panel">
-    <label class="campo">
-      <span>Mes a registrar</span>
-      <select id="select-mes"></select>
-    </label>
+    <span class="campo-label-rueda">Mes y año a registrar</span>
+    <div class="rueda-selector">
+      <div class="rueda-marco"></div>
+      <div class="rueda-columna" id="rueda-mes"></div>
+      <div class="rueda-columna" id="rueda-anio"></div>
+    </div>
+    <input type="hidden" id="select-mes" value="">
     <button class="btn btn-primario btn-ancho" id="btn-crear-mes">Continuar</button>
     <p class="ayuda-txt" id="mes-status"></p>
   </div>
@@ -270,5 +336,95 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="app.js"></script>
+<script>
+/* =========================================================
+   RUEDA DE MES / AÑO — agregado directo en index.html.
+   Sobrescribe poblarSelectMeses() (definida en app.js) para que,
+   en vez de un <select> tradicional, arme dos "ruletas" scrolleables.
+   El resultado se escribe igual en #select-mes (ahora un input oculto),
+   así el resto de app.js sigue funcionando sin cambios.
+   ========================================================= */
+(function(){
+  const MESES_RUEDA = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const ITEM_ALTO = 36;
+  const anioActual = new Date().getFullYear();
+  const ANIOS_RUEDA = [];
+  for (let a = anioActual - 15; a <= anioActual + 35; a++) ANIOS_RUEDA.push(a);
+
+  let mesElegido = MESES_RUEDA[new Date().getMonth()];
+  let anioElegido = anioActual;
+  let yaCentrado = false;
+
+  function actualizarValorOculto(){
+    const oculto = document.getElementById('select-mes');
+    if (oculto) oculto.value = `${mesElegido}-${anioElegido}`;
+  }
+
+  function construirColumna(contenedor, items, valorInicial, onSeleccion){
+    contenedor.innerHTML = '';
+    items.forEach(valor => {
+      const div = document.createElement('div');
+      div.className = 'rueda-item';
+      div.textContent = valor;
+      div.dataset.valor = valor;
+      if (valor === valorInicial) div.classList.add('seleccionado');
+      div.addEventListener('click', () => {
+        contenedor.scrollTo({ top: items.indexOf(valor) * ITEM_ALTO, behavior: 'smooth' });
+      });
+      contenedor.appendChild(div);
+    });
+
+    let timeoutScroll;
+    contenedor.addEventListener('scroll', () => {
+      clearTimeout(timeoutScroll);
+      timeoutScroll = setTimeout(() => {
+        let idx = Math.round(contenedor.scrollTop / ITEM_ALTO);
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        // Encaja prolijo en la posición exacta del ítem
+        contenedor.scrollTo({ top: idx * ITEM_ALTO, behavior: 'smooth' });
+        [...contenedor.children].forEach((el, i) => el.classList.toggle('seleccionado', i === idx));
+        onSeleccion(items[idx]);
+      }, 110);
+    });
+  }
+
+  function centrarSinAnimacion(contenedor, items, valor){
+    const idx = Math.max(0, items.indexOf(valor));
+    contenedor.scrollTop = idx * ITEM_ALTO;
+  }
+
+  // Sobrescribimos la función que app.js llama al iniciar sesión.
+  window.poblarSelectMeses = function(){
+    const ruedaMes = document.getElementById('rueda-mes');
+    const ruedaAnio = document.getElementById('rueda-anio');
+    if (!ruedaMes || !ruedaAnio) return;
+
+    construirColumna(ruedaMes, MESES_RUEDA, mesElegido, (v) => { mesElegido = v; actualizarValorOculto(); });
+    construirColumna(ruedaAnio, ANIOS_RUEDA, String(anioElegido), (v) => { anioElegido = Number(v); actualizarValorOculto(); });
+    actualizarValorOculto();
+
+    // El centrado inicial (scrollTop) solo funciona una vez que la pantalla
+    // es visible (display:block), por eso lo hacemos con un observer.
+    const pantalla = document.getElementById('screen-registrar-mes');
+    const observer = new MutationObserver(() => {
+      if (pantalla.classList.contains('active') && !yaCentrado) {
+        centrarSinAnimacion(ruedaMes, MESES_RUEDA, mesElegido);
+        centrarSinAnimacion(ruedaAnio, ANIOS_RUEDA, String(anioElegido));
+        yaCentrado = true;
+        observer.disconnect();
+      }
+    });
+    observer.observe(pantalla, { attributes: true, attributeFilter: ['class'] });
+
+    // Por si la pantalla ya estuviera activa en este momento
+    if (pantalla.classList.contains('active')) {
+      centrarSinAnimacion(ruedaMes, MESES_RUEDA, mesElegido);
+      centrarSinAnimacion(ruedaAnio, ANIOS_RUEDA, String(anioElegido));
+      yaCentrado = true;
+      observer.disconnect();
+    }
+  };
+})();
+</script>
 </body>
 </html>
